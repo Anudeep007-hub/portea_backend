@@ -1,0 +1,5 @@
+fastapi[standard] 
+asyncpg
+python-dotenv
+google 
+cloud-sql-python-connector[asyncpg]
