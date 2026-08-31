@@ -24,6 +24,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# The Vite frontend runs on port 5173. These rules allow its browser requests.
 # Allow local dev servers and deployed web frontends.
 app.add_middleware(
     CORSMiddleware,
