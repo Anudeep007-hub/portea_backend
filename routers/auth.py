@@ -1,82 +1,113 @@
-from fastapi import APIRouter, HTTPException, Depends, status
-import random
-from datetime import datetime, timedelta
+import asyncio
+import hmac
+import os
 
+from fastapi import APIRouter, Depends, HTTPException
 
-from database import get_db_connection
-from schemas.pydantic_models import SendOTPRequest, VerifyOTPRequest, OpsLoginRequest
+from database import db
+from schemas.pydantic_models import OpsLoginRequest, SendOTPRequest, VerifyOTPRequest
 from utils.ids import generate_person_ref
+from utils.security import create_ops_token, create_patient_token, get_current_patient
+
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-# In-memory temporary OTP store for MVP: { phone: { "otp": "1234", "expires_at": datetime } }
-OTP_CACHE = {}
+# Demo OTP: same code for every user, as requested.
+DEMO_OTP = "482913"
+
+
+def send_twilio_sms(phone: str) -> None:
+    """Send the fixed demo OTP to the mobile number entered in the app."""
+    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+    sender_number = os.getenv("TWILIO_PHONE_NUMBER")
+
+    if not account_sid or not auth_token or not sender_number:
+        raise RuntimeError("Add the three Twilio settings to backend/.env first.")
+
+    from twilio.rest import Client
+
+    client = Client(account_sid, auth_token)
+    client.messages.create(
+        to=f"+91{phone}",
+        from_=sender_number,
+        body=f"sms_2fa",
+    )
+
 
 @router.post("/send-otp")
 async def send_otp(payload: SendOTPRequest):
-    """Generates a 4-digit OTP and prints it to the console for testing."""
-    phone = payload.phone
-    otp = str(random.randint(1000, 9999))
-    
-    # Expires in 5 minutes
-    expires_at = datetime.now() + timedelta(minutes=5)
-    OTP_CACHE[phone] = {"otp": otp, "expires_at": expires_at}
-    
-    # In production, integrate an SMS gateway here (e.g., Twilio / Fast2SMS)
-    print(f"\n================================")
-    print(f" [OTP SERVICE] Phone: {phone} | OTP: {otp}")
-    print(f"================================\n")
-    
-    return {"message": "OTP sent successfully", "debug_otp": otp}  # debug_otp included for easy testing
+    """Send the single fixed demo OTP through Twilio."""
+    try:
+        await asyncio.to_thread(send_twilio_sms, payload.phone)
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+    return {"message": "OTP sent successfully"}
+
+
+@router.post("/resend-otp")
+async def resend_otp(payload: SendOTPRequest):
+    """Send the same fixed OTP to the same entered mobile number."""
+    return await send_otp(payload)
+
 
 @router.post("/verify-otp")
-async def verify_otp(payload: VerifyOTPRequest, conn = Depends(get_db_connection)):
-    """Verifies OTP. If user doesn't exist in AlloyDB, automatically creates them."""
-    phone = payload.phone
-    entered_otp = payload.otp
-    
-    # 1. Validate OTP from cache
-    record = OTP_CACHE.get(phone)
-    if not record or record["otp"] != entered_otp:
+async def verify_otp(payload: VerifyOTPRequest):
+    """Accept only the one demo OTP, then create the patient login session."""
+    if not hmac.compare_digest(payload.otp, DEMO_OTP):
         raise HTTPException(status_code=400, detail="Invalid OTP")
-    if datetime.now() > record["expires_at"]:
-        raise HTTPException(status_code=400, detail="OTP has expired")
-    
-    # Clear OTP after successful use
-    del OTP_CACHE[phone]
-    
-    # 2. Check if person exists in the database
-    person = await conn.fetchrow("SELECT * FROM persons WHERE phone = $1", phone)
-    
-    if person:
-        person_ref = person["person_ref"]
-        is_new_user = False
-    else:
-        # 3. If new, create them automatically
+
+    phone = payload.phone
+
+    if not db.pool:
         person_ref = generate_person_ref(phone)
-        default_name = f"User_{phone[-4:]}" # Placeholder name until they update profile
-        
-        await conn.execute(
-            """
-            INSERT INTO persons (person_ref, name, phone)
-            VALUES ($1, $2, $3)
-            """,
-            person_ref, default_name, phone
+        return {
+            "message": "OTP verified. Database is offline, so this is a temporary profile.",
+            "person_ref": person_ref,
+            "is_new_user": True,
+            "access_token": create_patient_token(person_ref),
+        }
+
+    async with db.pool.acquire() as conn:
+        person = await conn.fetchrow(
+            "SELECT person_ref FROM persons WHERE phone = $1",
+            phone,
         )
-        is_new_user = True
-        
-    # In production, generate a real JWT token here
+
+        if person:
+            person_ref = person["person_ref"]
+            is_new_user = False
+        else:
+            person_ref = generate_person_ref(phone)
+            default_name = f"User_{phone[-4:]}"
+            await conn.execute(
+                "INSERT INTO persons (person_ref, name, phone) VALUES ($1, $2, $3)",
+                person_ref,
+                default_name,
+                phone,
+            )
+            is_new_user = True
+
     return {
         "message": "Login successful",
         "person_ref": person_ref,
         "is_new_user": is_new_user,
-        "access_token": f"mock_jwt_token_for_{person_ref}"
+        "access_token": create_patient_token(person_ref),
     }
+
+
+@router.get("/me")
+async def current_user(person_ref: str = Depends(get_current_patient)):
+    return {"person_ref": person_ref}
+
 
 @router.post("/ops/login")
 async def ops_login(payload: OpsLoginRequest):
-    """Simple credentials check for internal Ops team."""
-    # Hardcoded for MVP prototype scope
     if payload.username == "ops_admin" and payload.password == "portea2026":
-        return {"message": "Ops login successful", "access_token": "mock_ops_admin_token"}
+        return {
+            "message": "Ops login successful",
+            "access_token": create_ops_token(payload.username),
+        }
+
     raise HTTPException(status_code=401, detail="Invalid Ops credentials")

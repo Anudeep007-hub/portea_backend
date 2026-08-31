@@ -3,9 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends
 
 from database import get_db_connection
 from schemas.pydantic_models import PersonUpdate, PhoneChangeRequest, PhoneVerifyRequest
-from routers.auth import OTP_CACHE
-import random
-from datetime import datetime, timedelta
+from utils.security import make_otp, verify_otp
 
 router = APIRouter(prefix="/persons", tags=["Persons & Profiles"])
 
@@ -58,8 +56,7 @@ async def request_phone_change(person_ref: str, payload: PhoneChangeRequest, con
     if existing:
         raise HTTPException(status_code=400, detail="Phone number already registered to another account")
         
-    otp = str(random.randint(1000, 9999))
-    OTP_CACHE[f"change_{new_phone}"] = {"otp": otp, "expires_at": datetime.now() + timedelta(minutes=5)}
+    otp = make_otp(new_phone, purpose="change-phone")
     
     print(f"\n================================")
     print(f" [PHONE CHANGE OTP] New Phone: {new_phone} | OTP: {otp}")
@@ -73,13 +70,8 @@ async def verify_phone_change(person_ref: str, payload: PhoneVerifyRequest, conn
     new_phone = payload.new_phone
     entered_otp = payload.otp
     
-    cache_key = f"change_{new_phone}"
-    record = OTP_CACHE.get(cache_key)
-    
-    if not record or record["otp"] != entered_otp:
+    if not verify_otp(new_phone, entered_otp, purpose="change-phone"):
         raise HTTPException(status_code=400, detail="Invalid or expired OTP")
-        
-    del OTP_CACHE[cache_key]
     
     await conn.execute(
         "UPDATE persons SET phone = $1, updated_at = now() WHERE person_ref = $2",

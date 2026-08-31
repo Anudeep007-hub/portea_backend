@@ -1,10 +1,13 @@
 from fastapi import APIRouter, HTTPException, Depends
+from datetime import date, datetime, time, timedelta
 
 
 from database import get_db_connection
 from schemas.pydantic_models import PhysioOnboard, PhysioUpdate
 
 router = APIRouter(prefix="/physios", tags=["Physiotherapists"])
+
+SLOT_TIMES = [time(9), time(11), time(14), time(17)]
 
 @router.get("")
 async def search_physios(pincode: str = None, service_slug: str = None, conn = Depends(get_db_connection)):
@@ -23,6 +26,59 @@ async def search_physios(pincode: str = None, service_slug: str = None, conn = D
         
     physios = await conn.fetch(query, *params)
     return [dict(physio) for physio in physios]
+
+@router.get("/{person_ref}/availability")
+async def physio_availability(person_ref: str, days: int = 60, conn = Depends(get_db_connection)):
+    """Return only free dates and time slots for one active physio."""
+    physio = await conn.fetchrow(
+        """
+        SELECT ph.person_id, p.name
+        FROM physios ph JOIN persons p ON p.id = ph.person_id
+        WHERE p.person_ref = $1 AND ph.active = TRUE
+        """,
+        person_ref,
+    )
+    if not physio:
+        raise HTTPException(status_code=404, detail="Physiotherapist is unavailable.")
+
+    slots_by_date = {}
+    first_day = date.today() + timedelta(days=1)
+    for offset in range(min(max(days, 1), 180)):
+        current_day = first_day + timedelta(days=offset)
+        if current_day.weekday() == 6:  # Sunday
+            continue
+        available_times = []
+        for slot_time in SLOT_TIMES:
+            start_at = datetime.combine(current_day, slot_time)
+            busy = await conn.fetchval(
+                """
+                SELECT EXISTS(
+                    SELECT 1 FROM appointments
+                    WHERE physio_id = $1
+                      AND status IN ('Pending', 'Confirmed', 'Scheduled')
+                      AND physio_buffer_range && tsrange(
+                          $2::timestamp,
+                          $2::timestamp + interval '105 minutes',
+                          '[)'
+                      )
+                )
+                """,
+                physio["person_id"],
+                start_at,
+            )
+            if not busy:
+                hour = slot_time.hour % 12 or 12
+                meridiem = "AM" if slot_time.hour < 12 else "PM"
+                available_times.append(f"{hour}:{slot_time.minute:02d} {meridiem}")
+        if available_times:
+            slots_by_date[current_day.isoformat()] = available_times
+
+    return {
+        "physio_ref": person_ref,
+        "physio_name": physio["name"],
+        "dates": list(slots_by_date.keys()),
+        "slots": slots_by_date,
+    }
 
 @router.post("")
 async def onboard_physio(payload: PhysioOnboard, conn = Depends(get_db_connection)):

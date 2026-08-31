@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Literal, Optional, List
 from datetime import datetime
 
 # ==========================================
@@ -10,7 +10,7 @@ class SendOTPRequest(BaseModel):
 
 class VerifyOTPRequest(BaseModel):
     phone: str = Field(..., example="9876543210")
-    otp: str = Field(..., example="4829")
+    otp: str = Field(..., example="482901")
 
 class OpsLoginRequest(BaseModel):
     username: str
@@ -59,6 +59,13 @@ class BookingCreate(BaseModel):
     address_line: str
     pincode: str = Field(..., max_length=10)
     condition_notes: Optional[str] = None
+    physio_choice: Literal["PORTEA_ASSIGNS", "PREFERRED_PHYSIO"] = "PORTEA_ASSIGNS"
+    preferred_physio_ref: Optional[str] = None
+
+
+class BookingWithFirstAppointment(BookingCreate):
+    start_at: datetime = Field(..., description="First appointment time")
+    duration_minutes: int = Field(45, ge=15, le=180)
 
 class DocumentDescription(BaseModel):
     description: Optional[str] = Field(None, description="e.g., Knee X-Ray report")

@@ -1,6 +1,7 @@
 import os
 import asyncpg
 from dotenv import load_dotenv 
+from fastapi import HTTPException
 
 load_dotenv()
 
@@ -25,7 +26,7 @@ async def connect_db():
                 INSTANCE_CONNECTION_NAME,
                 "asyncpg",
                 user=os.getenv("DB_USER", "postgres"),
-                password=os.getenv("DB_PASS", ""),
+                password=os.getenv("DB_PASSWORD") or os.getenv("DB_PASS", ""),
                 db=os.getenv("DB_NAME", "postgres"),
             )
         db.pool = await asyncpg.create_pool(min_size=2, max_size=10, connect=getconn)
@@ -48,5 +49,10 @@ async def close_db():
     print("Database connection closed.")
 
 async def get_db_connection():
+    if not db.pool:
+        raise HTTPException(
+            status_code=503,
+            detail="Database is unavailable. OTP is still available; try booking again later.",
+        )
     async with db.pool.acquire() as connection:
         yield connection

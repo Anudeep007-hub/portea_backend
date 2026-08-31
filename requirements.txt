@@ -3,3 +3,6 @@ asyncpg
 python-dotenv
 google 
 cloud-sql-python-connector[asyncpg]
+google-cloud-storage
+twilio
+google-cloud-storage
