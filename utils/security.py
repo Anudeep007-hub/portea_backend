@@ -10,7 +10,7 @@ import json
 import os
 import time
 
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 
 
 SESSION_SECRET = os.getenv("SESSION_SECRET", "portea-local-development-secret")
@@ -88,10 +88,20 @@ def read_token(token: str, expected_role: str) -> str:
         raise HTTPException(status_code=401, detail="Your sign-in has expired. Please verify your mobile number again.")
 
 
-async def get_current_patient(authorization: str | None = Header(default=None)) -> str:
+from database import get_db_connection
+
+
+async def get_current_patient(
+    authorization: str | None = Header(default=None),
+    conn = Depends(get_db_connection),
+) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Please sign in to view your bookings.")
-    return read_token(authorization.removeprefix("Bearer ").strip(), "patient")
+    person_ref = read_token(authorization.removeprefix("Bearer ").strip(), "patient")
+    person = await conn.fetchrow("SELECT id FROM persons WHERE person_ref = $1", person_ref)
+    if not person:
+        raise HTTPException(status_code=401, detail="Session expired or invalid. Please sign in again.")
+    return person_ref
 
 
 async def get_current_ops(authorization: str | None = Header(default=None)) -> str:

@@ -29,7 +29,7 @@ async def get_person_profile(person_ref: str, conn = Depends(get_db_connection))
 
 @router.patch("/{person_ref}")
 async def update_person_profile(person_ref: str, payload: PersonUpdate, conn = Depends(get_db_connection)):
-    """Update name or age."""
+    """Update name, age, or phone."""
     person = await conn.fetchrow("SELECT id FROM persons WHERE person_ref = $1", person_ref)
     if not person:
         raise HTTPException(status_code=404, detail="Person not found")
@@ -39,10 +39,11 @@ async def update_person_profile(person_ref: str, payload: PersonUpdate, conn = D
         UPDATE persons 
         SET name = COALESCE($1, name), 
             age = COALESCE($2, age), 
+            phone = COALESCE($3, phone),
             updated_at = now()
-        WHERE person_ref = $3
+        WHERE person_ref = $4
         """,
-        payload.name, payload.age, person_ref
+        payload.name, payload.age, payload.phone, person_ref
     )
     return {"message": "Profile updated successfully"}
 

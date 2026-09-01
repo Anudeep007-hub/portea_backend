@@ -10,7 +10,7 @@ class SendOTPRequest(BaseModel):
 
 class VerifyOTPRequest(BaseModel):
     phone: str = Field(..., example="9876543210")
-    otp: str = Field(..., example="482901")
+    otp: str = Field(..., example="482913")
 
 class OpsLoginRequest(BaseModel):
     username: str
@@ -27,6 +27,7 @@ class PersonCreate(BaseModel):
 class PersonUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=120)
     age: Optional[int] = Field(None, ge=0, le=120)
+    phone: Optional[str] = Field(None, max_length=15)
 
 class PhoneChangeRequest(BaseModel):
     new_phone: str = Field(..., max_length=15)

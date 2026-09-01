@@ -155,19 +155,20 @@ async def create_booking_with_first_appointment(
 
 @router.get("/patient/mine")
 async def get_my_bookings(person_ref: str = Depends(get_current_patient), conn = Depends(get_db_connection)):
-    """Return bookings made by this signed-in patient, including family bookings."""
+    """Return bookings made by this signed-in patient, or bookings where they are the patient."""
     rows = await conn.fetch(
         """
         SELECT b.booking_ref, b.package_size, b.price_total, b.status, b.physio_choice,
                b.address_line, b.pincode, b.condition_notes, b.created_at,
-               s.name AS service_name, p_pat.name AS patient_name,
+               s.name AS service_name, p_pat.name AS patient_name, p_pat.phone AS patient_phone,
+               booker.name AS booker_name, booker.phone AS booker_phone,
                p_pref.person_ref AS preferred_physio_ref, p_pref.name AS preferred_physio_name
         FROM bookings b
         JOIN persons booker ON booker.id = b.booked_by_id
         JOIN persons p_pat ON p_pat.id = b.patient_id
         JOIN services s ON s.id = b.service_id
         LEFT JOIN persons p_pref ON p_pref.id = b.preferred_physio_id
-        WHERE booker.person_ref = $1
+        WHERE booker.person_ref = $1 OR p_pat.person_ref = $1
         ORDER BY b.created_at DESC
         """,
         person_ref,
