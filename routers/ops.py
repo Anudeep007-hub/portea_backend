@@ -16,7 +16,7 @@ async def get_ops_dashboard(
     """Return pending appointments and the latest patient/OPS activity."""
     pending = await conn.fetch(
         """
-        SELECT a.appt_ref, a.session_number, a.start_at, a.status,
+        SELECT a.appt_ref, a.session_number, a.start_at, a.status, a.physio_id,
                patient.name AS patient_name, patient.phone AS patient_phone,
                b.booking_ref, b.address_line, b.pincode, b.condition_notes,
                b.physio_choice, service.name AS service_name,
@@ -104,9 +104,11 @@ async def confirm_appointment(
     )
     if not appt:
         raise HTTPException(status_code=404, detail="Appointment not found")
-    if appt["status"] != "Pending":
-        raise HTTPException(status_code=409, detail="Only pending appointments can be confirmed.")
-        
+    if appt["status"] not in ("Pending", "Confirmed"):
+        raise HTTPException(status_code=409, detail="Only pending or unassigned confirmed appointments can be confirmed.")
+    if appt["status"] == "Confirmed" and appt["physio_id"] is not None:
+        raise HTTPException(status_code=409, detail="This appointment is already confirmed and assigned to a physiotherapist.")
+
     physio_id = None
     if payload.physio_ref:
         physio_person = await conn.fetchrow("SELECT id FROM persons WHERE person_ref = $1", payload.physio_ref)
