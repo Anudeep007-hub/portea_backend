@@ -13,4 +13,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Run FastAPI using python -m uvicorn, binding to 0.0.0.0 and Cloud Run's $PORT
-CMD exec python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}
+CMD exec python -m uvicorn main:app 
