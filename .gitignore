@@ -2,5 +2,3 @@ vir
 .env
 __pycache__
 .dockerignore 
-run_migrations.py
-storage.py
