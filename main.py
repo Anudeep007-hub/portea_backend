@@ -7,13 +7,17 @@ from routers import auth, persons, services, physios, bookings, appointments, pa
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # OTP and health routes should still work if the remote database is offline.
-    try:
-        await asyncio.wait_for(connect_db(), timeout=8)
-        app.state.database_ready = True
-    except Exception as error:
-        app.state.database_ready = False
-        print(f"Database is unavailable. Starting in OTP demo mode. ({error})")
+    # Initialize DB in background so uvicorn binds to the port immediately for Cloud Run health checks
+    async def init_db():
+        try:
+            await connect_db()
+            app.state.database_ready = True
+            print("Database connection established.")
+        except Exception as error:
+            app.state.database_ready = False
+            print(f"Database is unavailable. Running in OTP demo mode: {error}")
+
+    asyncio.create_task(init_db())
     yield
     await close_db()
 
