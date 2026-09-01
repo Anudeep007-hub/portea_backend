@@ -115,13 +115,21 @@ async def confirm_appointment(
         if not physio_person:
             raise HTTPException(status_code=404, detail="Physio person not found")
             
+        # physio_record = await conn.fetchrow(
+        #     """
+        #     SELECT person_id FROM physios
+        #     WHERE person_id = $1 AND active = TRUE AND service_pincode = $2
+        #     """,
+        #     physio_person["id"],
+        #     appt["pincode"],
+        # )
         physio_record = await conn.fetchrow(
             """
             SELECT person_id FROM physios
-            WHERE person_id = $1 AND active = TRUE AND service_pincode = $2
+            WHERE person_id = $1
+            AND active = TRUE
             """,
             physio_person["id"],
-            appt["pincode"],
         )
         if not physio_record:
             raise HTTPException(status_code=400, detail="This person is not registered as an active physio")
