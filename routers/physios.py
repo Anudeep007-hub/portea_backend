@@ -22,7 +22,7 @@ async def search_physios(pincode: str = None, service_slug: str = None, conn = D
     
     if pincode:
         params.append(pincode)
-        query += f" AND ph.service_pincode = ${len(params)}"
+        query += f" AND TRIM(ph.service_pincode) = TRIM(${len(params)})"
         
     physios = await conn.fetch(query, *params)
     return [dict(physio) for physio in physios]

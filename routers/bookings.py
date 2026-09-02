@@ -51,10 +51,10 @@ async def create_booking_record(conn, payload: BookingCreate, person_ref: str):
             JOIN persons person ON person.id = physio.person_id
             WHERE person.person_ref = $1
               AND physio.active = TRUE
-              AND physio.service_pincode = $2
+              AND TRIM(physio.service_pincode) = TRIM($2)
             """,
             payload.preferred_physio_ref,
-            payload.pincode,
+            str(payload.pincode),
         )
         if not physio:
             raise HTTPException(
