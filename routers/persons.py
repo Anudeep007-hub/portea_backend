@@ -2,10 +2,36 @@ from fastapi import APIRouter, HTTPException, Depends
 
 
 from database import get_db_connection
-from schemas.pydantic_models import PersonUpdate, PhoneChangeRequest, PhoneVerifyRequest
+from schemas.pydantic_models import PersonCreate, PersonUpdate, PhoneChangeRequest, PhoneVerifyRequest
+from utils.ids import generate_person_ref
 from utils.security import make_otp, verify_otp
 
 router = APIRouter(prefix="/persons", tags=["Persons & Profiles"])
+
+@router.post("")
+async def create_person(payload: PersonCreate, conn = Depends(get_db_connection)):
+    """Register or resolve a person (e.g., patient or family member)."""
+    person = await conn.fetchrow("SELECT person_ref FROM persons WHERE phone = $1", payload.phone)
+    if person:
+        if payload.name or payload.age is not None:
+            await conn.execute(
+                """
+                UPDATE persons
+                SET name = COALESCE($1, name),
+                    age = COALESCE($2, age),
+                    updated_at = now()
+                WHERE phone = $3
+                """,
+                payload.name, payload.age, payload.phone
+            )
+        return {"person_ref": person["person_ref"], "message": "Person profile updated/resolved"}
+    
+    person_ref = generate_person_ref(payload.phone)
+    await conn.execute(
+        "INSERT INTO persons (person_ref, name, phone, age) VALUES ($1, $2, $3, $4)",
+        person_ref, payload.name, payload.phone, payload.age
+    )
+    return {"person_ref": person_ref, "message": "Person registered successfully"}
 
 @router.get("/{person_ref}")
 async def get_person_profile(person_ref: str, conn = Depends(get_db_connection)):
